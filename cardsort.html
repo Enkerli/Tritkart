@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Card Sort — Minimal, Touch‑Friendly</title>
+<style>
+  :root {
+    --bg:#0f172a;        /* slate-900 */
+    --panel:#111827;     /* gray-900 */
+    --muted:#94a3b8;     /* slate-400 */
+    --text:#e5e7eb;      /* gray-200 */
+    --accent:#38bdf8;    /* sky-400 */
+    --accent2:#22c55e;   /* green-500 */
+    --warn:#f59e0b;      /* amber-500 */
+    --danger:#ef4444;    /* red-500 */
+    --card:#1f2937;      /* gray-800 */
+    --border:#1f2937;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+  }
+  header {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0));
+    position: sticky; top: 0; z-index: 5;
+  }
+  header h1 { font-size: 18px; margin: 0 0 8px; letter-spacing: .2px; }
+  .controls {
+    display: grid; gap: 8px;
+    grid-template-columns: 1fr;
+  }
+  .row { display: grid; gap: 8px; grid-template-columns: 1fr; }
+  .grid-2 { grid-template-columns: 1fr 1fr; }
+  .grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+  textarea, input[type="text"] {
+    width: 100%; padding: 10px 12px; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--panel); color: var(--text);
+  }
+  textarea { min-height: 70px; resize: vertical; }
+  .btn {
+    border: 1px solid var(--border); background: #0b1220; color: var(--text);
+    padding: 10px 12px; border-radius: 10px; cursor: pointer; font-weight: 600;
+    transition: transform .02s ease-in-out, background .2s;
+  }
+  .btn:hover { background: #0d1526; }
+  .btn:active { transform: translateY(1px); }
+  .btn.primary { border-color: #0ea5e9; background: #082032; }
+  .btn.accent { border-color: var(--accent); }
+  .btn.success { border-color: var(--accent2); }
+  .btn.warn { border-color: var(--warn); }
+  .btn.danger { border-color: var(--danger); }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; }
+  .board {
+    padding: 12px; display: grid; gap: 12px;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  }
+  .pile {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    min-height: 150px;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    position: relative;
+  }
+  .pile-header {
+    display: flex; gap: 6px; align-items: center; justify-content: space-between;
+    padding: 10px 10px; border-bottom: 1px solid var(--border);
+  }
+  .pile-title {
+    font-weight: 700; font-size: 14px; letter-spacing: .2px;
+    flex: 1 1 auto; outline: none; border: none; background: transparent; color: var(--text);
+  }
+  .pile-count { font-size: 12px; color: var(--muted); margin-left: 6px; }
+  .pile-actions { display: flex; gap: 4px; }
+  .pile-body {
+    padding: 10px; display: flex; flex-direction: column; gap: 8px;
+    min-height: 120px;
+  }
+  .card {
+    background: var(--card); color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    box-shadow: 0 1px 0 rgba(0,0,0,.2);
+    touch-action: none; /* enable pointer events dragging */
+  }
+  .ghost {
+    opacity: .7; outline: 2px dashed var(--accent);
+    transform: scale(1.02);
+  }
+  .drop-hint {
+    position: absolute; inset: 0; border: 2px dashed rgba(56,189,248,.35); border-radius: 12px;
+    display: none;
+  }
+  .pile.drop-target .drop-hint { display: block; }
+  .footer { color: var(--muted); text-align: center; padding: 10px 14px; font-size: 12px; }
+  .spacer { height: 8px; }
+  @media (min-width: 740px) {
+    .controls .row { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Card Sort</h1>
+  <div class="controls">
+    <div class="row">
+      <div>
+        <label for="cardsInput" style="font-size:12px;color:var(--muted)">Cards (comma‑separated)</label>
+        <textarea id="cardsInput" placeholder="e.g., Navigation, Search, Profile, Settings, Help"></textarea>
+      </div>
+      <div>
+        <label for="catsInput" style="font-size:12px;color:var(--muted)">Predefined categories (optional)</label>
+        <input id="catsInput" type="text" placeholder="e.g., Core, Secondary, Tertiary" />
+      </div>
+    </div>
+    <div class="toolbar">
+      <button class="btn primary" id="createBoardBtn">Create board</button>
+      <button class="btn accent" id="addPileBtn">Add pile</button>
+      <button class="btn" id="shuffleBtn">Shuffle unsorted</button>
+      <button class="btn success" id="exportJsonBtn">Export JSON</button>
+      <button class="btn success" id="exportCsvBtn">Export CSV</button>
+      <button class="btn warn" id="importJsonBtn">Import JSON</button>
+      <button class="btn danger" id="resetBtn">Reset</button>
+      <span id="status" style="margin-left:auto;color:var(--muted);font-size:12px"></span>
+    </div>
+  </div>
+</header>
+
+<main class="board" id="board"></main>
+<div class="footer">Drag cards into piles. Tap pile names to rename. Autosaves locally.</div>
+
+<template id="pileTemplate">
+  <section class="pile" data-id="">
+    <div class="drop-hint"></div>
+    <div class="pile-header">
+      <input class="pile-title" value="" />
+      <span class="pile-count">0</span>
+      <div class="pile-actions">
+        <button class="btn" data-action="duplicate" title="Duplicate pile">⧉</button>
+        <button class="btn danger" data-action="delete" title="Delete pile">✕</button>
+      </div>
+    </div>
+    <div class="pile-body" data-dropzone></div>
+  </section>
+</template>
+
+<template id="cardTemplate">
+  <div class="card" data-id=""></div>
+</template>
+
+<script>
+(() => {
+  const el = (sel, root=document) => root.querySelector(sel);
+  const els = (sel, root=document) => Array.from(root.querySelectorAll(sel));
+  const board = el('#board');
+  const pileTpl = el('#pileTemplate');
+  const cardTpl = el('#cardTemplate');
+  const statusEl = el('#status');
+  const LS_KEY = 'cardsort_state_v1';
+
+  /*** State ***/
+  let state = {
+    piles: [],              // [{id,name}]
+    cards: [],              // [{id,text}]
+    placements: {},         // cardId -> pileId
+    nextId: 1
+  };
+
+  /*** Utilities ***/
+  const uid = () => String(state.nextId++);
+  const now = () => new Date().toISOString();
+  const save = () => {
+    localStorage.setItem(LS_KEY, JSON.stringify(state));
+    setStatus('Saved');
+    setTimeout(()=>setStatus(''),800);
+  };
+  const load = () => {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return false;
+    try {
+      const s = JSON.parse(raw);
+      if (s && s.piles && s.cards) { state = s; return true; }
+    } catch {}
+    return false;
+  };
+  const setStatus = (msg) => { statusEl.textContent = msg; };
+
+  const shuffle = (arr) => {
+    for (let i=arr.length-1;i>0;i--) {
+      const j = Math.floor(Math.random()*(i+1));
+      [arr[i],arr[j]]=[arr[j],arr[i]];
+    }
+    return arr;
+  };
+
+  const getPileById = (id) => state.piles.find(p=>p.id===id);
+  const getCardById = (id) => state.cards.find(c=>c.id===id);
+  const pileCount = (pileId) => Object.values(state.placements).filter(pid=>pid===pileId).length;
+
+  /*** DOM Builders ***/
+  function render() {
+    board.innerHTML = '';
+    for (const pile of state.piles) {
+      const node = pileTpl.content.firstElementChild.cloneNode(true);
+      node.dataset.id = pile.id;
+      const title = el('.pile-title', node);
+      const count = el('.pile-count', node);
+      title.value = pile.name;
+      count.textContent = pileCount(pile.id);
+
+      // Actions
+      el('[data-action="delete"]', node).addEventListener('click', () => {
+        if (pile.name === 'Unsorted') { alert("Can't delete the Unsorted pile."); return; }
+        // Move cards to Unsorted before removing pile
+        const unsorted = state.piles.find(p=>p.name==='Unsorted')?.id || state.piles[0].id;
+        for (const [cardId, pid] of Object.entries(state.placements)) {
+          if (pid === pile.id) state.placements[cardId] = unsorted;
+        }
+        state.piles = state.piles.filter(p=>p.id!==pile.id);
+        save(); render();
+      });
+      el('[data-action="duplicate"]', node).addEventListener('click', () => {
+        const copy = { id: uid(), name: pile.name + ' (copy)' };
+        state.piles.push(copy);
+        save(); render();
+      });
+      title.addEventListener('change', () => {
+        pile.name = title.value.trim() || pile.name;
+        save(); render();
+      });
+
+      const body = el('.pile-body', node);
+      // Cards belonging to this pile
+      const cardIds = state.cards.map(c=>c.id).filter(cid => state.placements[cid]===pile.id);
+      for (const cid of cardIds) {
+        body.appendChild(buildCard(cid));
+      }
+      board.appendChild(node);
+    }
+    // Enable drop targets after render
+    enableDropzones();
+  }
+
+  function buildCard(cardId) {
+    const c = getCardById(cardId);
+    const node = cardTpl.content.firstElementChild.cloneNode(true);
+    node.dataset.id = c.id;
+    node.textContent = c.text;
+    enableDrag(node);
+    return node;
+  }
+
+  /*** Drag & Drop via Pointer Events (touch + mouse) ***/
+  let drag = null; // {el,startX,startY,dx,dy,originPile}
+  function enableDrag(cardEl) {
+    cardEl.addEventListener('pointerdown', onPointerDown);
+  }
+  function onPointerDown(ev) {
+    const target = ev.currentTarget;
+    ev.preventDefault();
+    target.setPointerCapture?.(ev.pointerId);
+
+    const rect = target.getBoundingClientRect();
+    drag = {
+      el: target,
+      startX: ev.clientX - rect.left,
+      startY: ev.clientY - rect.top,
+      originPile: target.closest('.pile').dataset.id
+    };
+    target.classList.add('ghost');
+    target.style.position = 'fixed';
+    target.style.left = rect.left + 'px';
+    target.style.top = rect.top + 'px';
+    target.style.width = rect.width + 'px';
+    target.style.zIndex = 9999;
+    document.addEventListener('pointermove', onPointerMove);
+    document.addEventListener('pointerup', onPointerUp, { once: true });
+  }
+  function onPointerMove(ev) {
+    if (!drag) return;
+    drag.el.style.left = (ev.clientX - drag.startX) + 'px';
+    drag.el.style.top  = (ev.clientY - drag.startY) + 'px';
+    // highlight drop target
+    const dz = dropzoneAt(ev.clientX, ev.clientY);
+    els('.pile').forEach(p => p.classList.toggle('drop-target', p===dz?.closest('.pile')));
+  }
+  function onPointerUp(ev) {
+    if (!drag) return;
+    const dz = dropzoneAt(ev.clientX, ev.clientY);
+    els('.pile').forEach(p => p.classList.remove('drop-target'));
+    const cardId = drag.el.dataset.id;
+    drag.el.classList.remove('ghost');
+    drag.el.style.position = '';
+    drag.el.style.left = '';
+    drag.el.style.top = '';
+    drag.el.style.width = '';
+    drag.el.style.zIndex = '';
+
+    if (dz) {
+      const pileEl = dz.closest('.pile');
+      const pileId = pileEl.dataset.id;
+      state.placements[cardId] = pileId;
+      save(); render();
+    } else {
+      // put card back to its origin pile visually
+      render();
+    }
+    document.removeEventListener('pointermove', onPointerMove);
+    drag = null;
+  }
+  function dropzoneAt(x, y) {
+    const elUnder = document.elementFromPoint(x, y);
+    if (!elUnder) return null;
+    return elUnder.closest('[data-dropzone]');
+  }
+  function enableDropzones() {
+    // purely visual hints handled in pointermove; no extra listeners needed
+  }
+
+  /*** Actions ***/
+  function createBoard(cardsList, catList) {
+    // Reset state
+    state = { piles: [], cards: [], placements: {}, nextId: 1 };
+    // Piles
+    const piles = (catList||[]).map(name => ({ id: uid(), name: name.trim() })).filter(p=>p.name);
+    const unsorted = { id: uid(), name: 'Unsorted' };
+    state.piles = [unsorted, ...piles];
+    // Cards
+    const cards = (cardsList||[]).map(t => t.trim()).filter(Boolean);
+    shuffle(cards);
+    for (const t of cards) {
+      const id = uid();
+      state.cards.push({ id, text: t });
+      state.placements[id] = unsorted.id;
+    }
+    save(); render();
+  }
+
+  function exportJSON() {
+    const out = {
+      exported_at: now(),
+      piles: state.piles.map(p => ({
+        name: p.name,
+        cards: state.cards.filter(c => state.placements[c.id]===p.id).map(c => c.text)
+      }))
+    };
+    download(JSON.stringify(out, null, 2), 'cardsort.json', 'application/json');
+  }
+  function exportCSV() {
+    const rows = [['card','category']];
+    for (const c of state.cards) {
+      const pileId = state.placements[c.id];
+      const pile = getPileById(pileId);
+      rows.push([escapeCsv(c.text), escapeCsv(pile?.name || '')]);
+    }
+    const csv = rows.map(r=>r.join(',')).join('\n');
+    download(csv, 'cardsort.csv', 'text/csv');
+  }
+  const escapeCsv = (s) => {
+    if (s.includes('"') || s.includes(',') || s.includes('\n')) {
+      return '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+  }
+  function importJSONDialog() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      const text = await file.text();
+      try {
+        const data = JSON.parse(text);
+        if (!data.piles) throw new Error('Invalid JSON.');
+        // Normalize into state
+        state = { piles: [], cards: [], placements: {}, nextId: 1 };
+        const pileIdByName = {};
+        for (const p of data.piles) {
+          const pid = uid();
+          state.piles.push({ id: pid, name: String(p.name||'') });
+          pileIdByName[p.name||''] = pid;
+        }
+        for (const p of data.piles) {
+          for (const t of (p.cards||[])) {
+            const id = uid();
+            state.cards.push({ id, text: String(t) });
+            state.placements[id] = pileIdByName[p.name||''];
+          }
+        }
+        // Ensure "Unsorted" exists
+        if (!state.piles.some(p=>p.name==='Unsorted')) {
+          state.piles.unshift({ id: uid(), name:'Unsorted' });
+        }
+        save(); render();
+      } catch (e) {
+        alert('Failed to import JSON: ' + e.message);
+      }
+    };
+    input.click();
+  }
+  function download(content, filename, type) {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  /*** Wire up controls ***/
+  el('#createBoardBtn').addEventListener('click', () => {
+    const cards = el('#cardsInput').value.split(',');
+    const cats = el('#catsInput').value.split(',');
+    createBoard(cards, cats);
+  });
+  el('#addPileBtn').addEventListener('click', () => {
+    const name = prompt('New pile name:', 'New Category');
+    if (!name) return;
+    state.piles.push({ id: uid(), name });
+    save(); render();
+  });
+  el('#shuffleBtn').addEventListener('click', () => {
+    const unsorted = state.piles.find(p=>p.name==='Unsorted')?.id || state.piles[0]?.id;
+    if (!unsorted) return;
+    const unsortedIds = state.cards.filter(c => state.placements[c.id]===unsorted).map(c=>c.id);
+    shuffle(unsortedIds);
+    // No visual order persistence, so just re-render (cards are displayed in state order)
+    // Move unsorted cards to the end of state.cards to simulate shuffle in UI order
+    const others = state.cards.filter(c => !unsortedIds.includes(c.id));
+    state.cards = [...others, ...unsortedIds.map(id => getCardById(id))];
+    save(); render();
+  });
+  el('#exportJsonBtn').addEventListener('click', exportJSON);
+  el('#exportCsvBtn').addEventListener('click', exportCSV);
+  el('#importJsonBtn').addEventListener('click', importJSONDialog);
+  el('#resetBtn').addEventListener('click', () => {
+    if (!confirm('Clear the board and local data?')) return;
+    localStorage.removeItem(LS_KEY);
+    state = { piles: [], cards: [], placements: {}, nextId: 1 };
+    board.innerHTML = '';
+    setStatus('Reset');
+  });
+
+  /*** Bootstrap ***/
+  // Load saved state or a demo
+  if (!load()) {
+    // Demo data
+    const demoCards = ['Navigation','Search','Profile','Settings','Help','Pricing','Docs','Blog','About','Contact','Onboarding','Checkout'];
+    const demoCats = ['Core','Secondary','Tertiary'];
+    createBoard(demoCards, demoCats);
+    el('#cardsInput').value = demoCards.join(', ');
+    el('#catsInput').value = demoCats.join(', ');
+  } else {
+    render();
+    // Populate inputs from state
+    el('#cardsInput').value = state.cards.map(c=>c.text).join(', ');
+    const cats = state.piles.filter(p=>p.name!=='Unsorted').map(p=>p.name);
+    el('#catsInput').value = cats.join(', ');
+  }
+})();
+</script>
+</body>
+</html>
