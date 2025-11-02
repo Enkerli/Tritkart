@@ -91,10 +91,14 @@
     padding: 10px 12px;
     box-shadow: 0 1px 0 rgba(0,0,0,.2);
     touch-action: none; /* enable pointer events dragging */
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: grab;
   }
   .ghost {
     opacity: .7; outline: 2px dashed var(--accent);
     transform: scale(1.02);
+    cursor: grabbing;
   }
   .drop-hint {
     position: absolute; inset: 0; border: 2px dashed rgba(56,189,248,.35); border-radius: 12px;
@@ -260,7 +264,7 @@
   }
 
   /*** Drag & Drop via Pointer Events (touch + mouse) ***/
-  let drag = null; // {el,startX,startY,dx,dy,originPile}
+  let drag = null; // {el,pointerId,startX,startY,originPile}
   function enableDrag(cardEl) {
     cardEl.addEventListener('pointerdown', onPointerDown);
   }
@@ -272,11 +276,13 @@
     const rect = target.getBoundingClientRect();
     drag = {
       el: target,
+      pointerId: ev.pointerId,
       startX: ev.clientX - rect.left,
       startY: ev.clientY - rect.top,
       originPile: target.closest('.pile').dataset.id
     };
     target.classList.add('ghost');
+    target.style.pointerEvents = 'none'; // let elementFromPoint see dropzones
     target.style.position = 'fixed';
     target.style.left = rect.left + 'px';
     target.style.top = rect.top + 'px';
@@ -298,12 +304,18 @@
     const dz = dropzoneAt(ev.clientX, ev.clientY);
     els('.pile').forEach(p => p.classList.remove('drop-target'));
     const cardId = drag.el.dataset.id;
+
+    // restore styles before re-render (prevents flicker)
     drag.el.classList.remove('ghost');
+    drag.el.style.pointerEvents = '';
     drag.el.style.position = '';
     drag.el.style.left = '';
     drag.el.style.top = '';
     drag.el.style.width = '';
     drag.el.style.zIndex = '';
+
+    // release capture explicitly
+    try { drag.el.releasePointerCapture?.(drag.pointerId); } catch {}
 
     if (dz) {
       const pileEl = dz.closest('.pile');
@@ -311,8 +323,7 @@
       state.placements[cardId] = pileId;
       save(); render();
     } else {
-      // put card back to its origin pile visually
-      render();
+      render(); // revert visually
     }
     document.removeEventListener('pointermove', onPointerMove);
     drag = null;
