@@ -24,6 +24,8 @@
     background: var(--bg);
     color: var(--text);
     font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+    -webkit-text-size-adjust: 100%; /* prevent text scaling on iOS */
+    -webkit-tap-highlight-color: transparent; /* remove tap highlight on iOS */
   }
   header {
     padding: 14px 16px;
@@ -93,12 +95,22 @@
     touch-action: none; /* enable pointer events dragging */
     user-select: none;
     -webkit-user-select: none;
+    -webkit-touch-callout: none; /* prevent iOS callout menu */
+    -webkit-tap-highlight-color: transparent; /* remove tap highlight */
     cursor: grab;
   }
   .ghost {
     opacity: .7; outline: 2px dashed var(--accent);
     transform: scale(1.02);
     cursor: grabbing;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+  body.dragging {
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
   }
   .drop-hint {
     position: absolute; inset: 0; border: 2px dashed rgba(56,189,248,.35); border-radius: 12px;
@@ -270,8 +282,14 @@
   }
   function onPointerDown(ev) {
     const target = ev.currentTarget;
+    // Prevent default touch behaviors and text selection
     ev.preventDefault();
-    target.setPointerCapture?.(ev.pointerId);
+    ev.stopPropagation();
+
+    // Set pointer capture for this element
+    if (target.setPointerCapture) {
+      target.setPointerCapture(ev.pointerId);
+    }
 
     const rect = target.getBoundingClientRect();
     drag = {
@@ -282,50 +300,74 @@
       originPile: target.closest('.pile').dataset.id
     };
     target.classList.add('ghost');
+    document.body.classList.add('dragging'); // prevent text selection globally
     target.style.pointerEvents = 'none'; // let elementFromPoint see dropzones
     target.style.position = 'fixed';
     target.style.left = rect.left + 'px';
     target.style.top = rect.top + 'px';
     target.style.width = rect.width + 'px';
     target.style.zIndex = 9999;
-    document.addEventListener('pointermove', onPointerMove);
-    document.addEventListener('pointerup', onPointerUp, { once: true });
+
+    // Add event listeners
+    target.addEventListener('pointermove', onPointerMove);
+    target.addEventListener('pointerup', onPointerUp);
+    target.addEventListener('pointercancel', onPointerUp);
   }
   function onPointerMove(ev) {
-    if (!drag) return;
+    if (!drag || ev.pointerId !== drag.pointerId) return;
+    ev.preventDefault();
+
     drag.el.style.left = (ev.clientX - drag.startX) + 'px';
     drag.el.style.top  = (ev.clientY - drag.startY) + 'px';
+
     // highlight drop target
     const dz = dropzoneAt(ev.clientX, ev.clientY);
     els('.pile').forEach(p => p.classList.toggle('drop-target', p===dz?.closest('.pile')));
   }
   function onPointerUp(ev) {
-    if (!drag) return;
+    if (!drag || ev.pointerId !== drag.pointerId) return;
+    ev.preventDefault();
+
     const dz = dropzoneAt(ev.clientX, ev.clientY);
     els('.pile').forEach(p => p.classList.remove('drop-target'));
     const cardId = drag.el.dataset.id;
+    const dragEl = drag.el;
+    const pointerId = drag.pointerId;
+
+    // Clean up event listeners
+    dragEl.removeEventListener('pointermove', onPointerMove);
+    dragEl.removeEventListener('pointerup', onPointerUp);
+    dragEl.removeEventListener('pointercancel', onPointerUp);
 
     // restore styles before re-render (prevents flicker)
-    drag.el.classList.remove('ghost');
-    drag.el.style.pointerEvents = '';
-    drag.el.style.position = '';
-    drag.el.style.left = '';
-    drag.el.style.top = '';
-    drag.el.style.width = '';
-    drag.el.style.zIndex = '';
+    dragEl.classList.remove('ghost');
+    document.body.classList.remove('dragging'); // re-enable text selection
+    dragEl.style.pointerEvents = '';
+    dragEl.style.position = '';
+    dragEl.style.left = '';
+    dragEl.style.top = '';
+    dragEl.style.width = '';
+    dragEl.style.zIndex = '';
 
     // release capture explicitly
-    try { drag.el.releasePointerCapture?.(drag.pointerId); } catch {}
+    if (dragEl.releasePointerCapture) {
+      try { dragEl.releasePointerCapture(pointerId); } catch {}
+    }
 
+    // Update state if dropped on a valid dropzone
     if (dz) {
       const pileEl = dz.closest('.pile');
-      const pileId = pileEl.dataset.id;
-      state.placements[cardId] = pileId;
-      save(); render();
+      if (pileEl) {
+        const pileId = pileEl.dataset.id;
+        state.placements[cardId] = pileId;
+        save(); render();
+      } else {
+        render(); // revert visually
+      }
     } else {
       render(); // revert visually
     }
-    document.removeEventListener('pointermove', onPointerMove);
+
     drag = null;
   }
   function dropzoneAt(x, y) {
